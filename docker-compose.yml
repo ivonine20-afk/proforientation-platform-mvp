@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    env_file:
+      - ./server/.env
+    environment:
+      PORT: 3000
+      DATABASE_PATH: /app/data/base.db
+      CLIENT_DIST: /app/client/dist
+    volumes:
+      - ./storage:/app/storage
+      - app_data:/app/data
+
+volumes:
+  app_data:

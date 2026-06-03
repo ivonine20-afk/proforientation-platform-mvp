@@ -1,0 +1,16 @@
+{
+  "name": "orientation-platform",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm --prefix server start",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "init-db": "npm --prefix server run init-db",
+    "seed": "npm --prefix server run seed"
+  }
+}
