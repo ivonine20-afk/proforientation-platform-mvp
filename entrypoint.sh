@@ -3,10 +3,8 @@ set -e
 
 cd /app/server
 
-if [ ! -f /app/data/base.db ]; then
-  echo "Initializing SQLite database..."
-  node src/db/init-db.js
-  node src/db/seed.js
-fi
+echo "Initializing SQLite database..."
+node src/db/init-db.js
+node src/db/seed.js
 
 exec node src/index.js

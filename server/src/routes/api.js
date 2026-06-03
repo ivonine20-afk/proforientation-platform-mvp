@@ -5,14 +5,31 @@ import { adminAuth } from "../middleware/adminAuth.js";
 
 export const apiRouter = express.Router();
 
-const profileLabels = {
-  energy: "Энергетика",
-  manufacturing: "Производство",
-  ecology: "Экология",
-  science: "Лаборатории",
-  engineering: "Инженерия",
-  logistics: "Логистика",
-  digital: "Цифровые задачи"
+const roleMeta = {
+  production_engineer: {
+    title: "Инженер-производственник",
+    competencies: ["производственное мышление", "работа со схемами", "поиск узких мест"]
+  },
+  quality_technologist: {
+    title: "Технолог-контролер",
+    competencies: ["контроль качества", "нормативы", "точность измерений"]
+  },
+  logistics_coordinator: {
+    title: "Логист-координатор",
+    competencies: ["маршрутизация", "планирование", "координация сроков"]
+  },
+  marketing_designer: {
+    title: "Маркетолог-дизайнер",
+    competencies: ["визуальная коммуникация", "презентация продукта", "клиентский взгляд"]
+  },
+  automation_operator: {
+    title: "Оператор автоматизированных систем",
+    competencies: ["dashboard-анализ", "датчики", "цифровой контроль"]
+  },
+  hr_safety_coach: {
+    title: "Наставник по безопасности и HR",
+    competencies: ["безопасность", "обучение", "командная коммуникация"]
+  }
 };
 
 function parseJson(value, fallback) {
@@ -29,20 +46,38 @@ function addTags(profile, tags) {
   }
 }
 
-function topTags(profile, limit = 4) {
-  return Object.entries(profile)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([tag]) => tag);
+function roleScores(profile) {
+  return Object.entries(roleMeta)
+    .map(([code, meta]) => ({
+      code,
+      title: meta.title,
+      score: Number(profile[code] || 0),
+      competencies: meta.competencies
+    }))
+    .sort((a, b) => b.score - a.score);
 }
 
-function getProfileTitle(profile) {
-  const tags = topTags(profile, 2);
-  if (tags.includes("energy")) return "Инженерно-энергетический профиль";
-  if (tags.includes("manufacturing")) return "Производственно-технологический профиль";
-  if (tags.includes("ecology")) return "Эколого-лабораторный профиль";
-  if (tags.includes("logistics")) return "Организационно-диспетчерский профиль";
-  return "Смешанный технический профиль";
+function assignRoles(profile) {
+  const scores = roleScores(profile);
+  const maxScore = Math.max(1, scores[0]?.score || 1);
+  const normalized = scores.map((role) => ({
+    ...role,
+    percent: Math.round((role.score / maxScore) * 100)
+  }));
+
+  return {
+    primaryRole: normalized[0],
+    auxiliaryRoles: normalized.slice(1, 3).filter((role) => role.score > 0),
+    roleScores: normalized,
+    mappedAt: new Date().toISOString()
+  };
+}
+
+function getReadinessLevel(score) {
+  if (score >= 85) return "Готов к практике";
+  if (score >= 65) return "Готов после короткой подготовки";
+  if (score >= 45) return "Нужна вводная стажировка";
+  return "Рекомендуется пройти базовый трек";
 }
 
 async function getTest() {
@@ -59,6 +94,7 @@ async function getTest() {
       "SELECT id, text, points, tags_json FROM global_test_answers WHERE question_id = ? ORDER BY id",
       [question.id]
     );
+    question.visualType = question.hint?.match(/тип[а-я ]+«(.+)»/i)?.[1] || "визуальный выбор";
     question.answers = answers.map((answer) => ({
       id: answer.id,
       text: answer.text,
@@ -83,11 +119,9 @@ async function getEnterprises() {
       [row.id]
     );
     const tasks = scenario
-      ? await dbAll(
-          "SELECT * FROM enterprise_game_questions WHERE scenario_id = ? ORDER BY position",
-          [scenario.id]
-        )
+      ? await dbAll("SELECT * FROM enterprise_game_questions WHERE scenario_id = ? ORDER BY position", [scenario.id])
       : [];
+
     for (const task of tasks) {
       const answers = await dbAll(
         "SELECT id, text, points, is_preferred FROM enterprise_game_answers WHERE question_id = ? ORDER BY id",
@@ -101,6 +135,7 @@ async function getEnterprises() {
         isPreferred: Boolean(answer.is_preferred)
       }));
     }
+
     result.push({
       id: row.id,
       code: row.code,
@@ -128,43 +163,88 @@ function rankEnterprises(profile, enterprises) {
       const matchedWeight = Object.entries(enterprise.tags).reduce((sum, [tag, weight]) => {
         return sum + Math.min(profile[tag] || 0, Number(weight));
       }, 0);
-      return {
-        ...enterprise,
-        match: totalWeight ? Math.round((matchedWeight / totalWeight) * 100) : 0
-      };
+      return { ...enterprise, match: totalWeight ? Math.round((matchedWeight / totalWeight) * 100) : 0 };
     })
     .sort((a, b) => b.match - a.match);
 }
 
 async function calculatePreview(answerIds) {
   const profile = {};
-  if (!Array.isArray(answerIds)) return { profile, topTags: [], title: getProfileTitle(profile), enterprises: [] };
-
-  for (const id of answerIds) {
-    const answer = await dbGet("SELECT tags_json FROM global_test_answers WHERE id = ?", [id]);
-    if (answer) addTags(profile, parseJson(answer.tags_json, {}));
+  if (Array.isArray(answerIds)) {
+    for (const id of answerIds) {
+      const answer = await dbGet("SELECT tags_json FROM global_test_answers WHERE id = ?", [id]);
+      if (answer) addTags(profile, parseJson(answer.tags_json, {}));
+    }
   }
 
+  const roleMapping = assignRoles(profile);
   const enterprises = rankEnterprises(profile, await getEnterprises());
-  const tags = topTags(profile);
   return {
     profile,
-    topTags: tags.map((tag) => ({ code: tag, label: profileLabels[tag] || tag })),
-    title: getProfileTitle(profile),
-    enterprises
+    title: roleMapping.primaryRole?.title || "Профессия на заводе",
+    primaryRole: roleMapping.primaryRole,
+    auxiliaryRoles: roleMapping.auxiliaryRoles,
+    roleScores: roleMapping.roleScores,
+    enterprises,
+    portfolioSeed: {
+      headline: roleMapping.primaryRole?.title,
+      competencies: [
+        ...(roleMapping.primaryRole?.competencies || []),
+        ...roleMapping.auxiliaryRoles.flatMap((role) => role.competencies.slice(0, 1))
+      ]
+    }
   };
 }
 
+function makeFinalResult(preview, enterprise, scenarioAnswers) {
+  const score = scenarioAnswers.reduce((sum, answer) => sum + Number(answer.points || 0), 0);
+  const maxScore = enterprise?.scenario?.tasks?.reduce((sum, task) => {
+    return sum + Math.max(...task.answers.map((answer) => Number(answer.points || 0)));
+  }, 0) || 1;
+  const readinessScore = Math.min(100, Math.round((score / maxScore) * 100));
+  const badges = scenarioAnswers
+    .filter((answer) => answer.isPreferred)
+    .map((answer, index) => ["Командный старт", "Системное мышление", "Качество без компромиссов", "Готов к практике"][index] || "Производственный выбор");
+
+  const portfolio = {
+    title: `Цифровое портфолио: ${preview.primaryRole?.title}`,
+    primaryRole: preview.primaryRole,
+    auxiliaryRoles: preview.auxiliaryRoles,
+    competencies: preview.portfolioSeed.competencies,
+    badges,
+    score,
+    readinessScore,
+    readinessLevel: getReadinessLevel(readinessScore),
+    enterprise: enterprise?.name
+  };
+
+  const certificate = {
+    id: `PA-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    title: "Сертификат Промакадемии",
+    issuedAt: new Date().toISOString(),
+    text: `Подтверждает прохождение производственного симулятора по роли «${preview.primaryRole?.title}».`
+  };
+
+  const hrProfile = {
+    studentRole: preview.primaryRole,
+    auxiliaryRoles: preview.auxiliaryRoles,
+    competencyProfile: preview.roleScores,
+    practiceReadiness: readinessScore,
+    readinessLevel: getReadinessLevel(readinessScore),
+    recommendedPracticeTrack: enterprise?.professions?.find((profession) => profession.title === preview.primaryRole?.title) || enterprise?.professions?.[0] || null,
+    riskNotes: readinessScore < 65 ? ["Нужен вводный инструктаж и наставник на первые задания"] : []
+  };
+
+  return { score, maxScore, readinessScore, badges, portfolio, certificate, hrProfile };
+}
+
 apiRouter.get("/health", (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, product: "Промакадемия" });
 });
 
 apiRouter.get("/bootstrap", async (_req, res, next) => {
   try {
-    res.json({
-      test: await getTest(),
-      enterprises: await getEnterprises()
-    });
+    res.json({ test: await getTest(), enterprises: await getEnterprises(), roles: roleMeta });
   } catch (error) {
     next(error);
   }
@@ -172,8 +252,7 @@ apiRouter.get("/bootstrap", async (_req, res, next) => {
 
 apiRouter.post("/results/preview", async (req, res, next) => {
   try {
-    const result = await calculatePreview(req.body.answerIds || []);
-    res.json(result);
+    res.json(await calculatePreview(req.body.answerIds || []));
   } catch (error) {
     next(error);
   }
@@ -184,7 +263,6 @@ apiRouter.post("/results/final", async (req, res, next) => {
     const { answerIds = [], enterpriseId, scenarioAnswers = [], sessionKey } = req.body;
     const preview = await calculatePreview(answerIds);
     const enterprise = (await getEnterprises()).find((item) => item.id === Number(enterpriseId));
-    const scenarioScore = scenarioAnswers.reduce((sum, answer) => sum + Number(answer.points || 0), 0);
     const key = sessionKey || crypto.randomUUID();
 
     let session = await dbGet("SELECT id FROM user_sessions WHERE session_key = ?", [key]);
@@ -193,23 +271,14 @@ apiRouter.post("/results/final", async (req, res, next) => {
       session = { id: inserted.id };
     }
 
-    const enterpriseResult = {
-      score: scenarioScore,
-      answers: scenarioAnswers,
-      recommendation: enterprise?.professions?.[0] || null
-    };
+    const enterpriseResult = makeFinalResult(preview, enterprise, scenarioAnswers);
 
     await dbRun(
       "INSERT INTO user_results (session_id, enterprise_id, global_profile_json, enterprise_result_json) VALUES (?, ?, ?, ?)",
       [session.id, enterprise?.id || null, JSON.stringify(preview), JSON.stringify(enterpriseResult)]
     );
 
-    res.json({
-      sessionKey: key,
-      profile: preview,
-      enterprise,
-      enterpriseResult
-    });
+    res.json({ sessionKey: key, profile: preview, enterprise, enterpriseResult });
   } catch (error) {
     next(error);
   }
@@ -218,8 +287,39 @@ apiRouter.post("/results/final", async (req, res, next) => {
 apiRouter.post("/email-results", async (req, res) => {
   res.json({
     ok: true,
-    message: `Демо-отправка результата${req.body.email ? ` на ${req.body.email}` : ""}. В production подключается email-провайдер.`
+    message: `Демо-отправка цифрового портфолио${req.body.email ? ` на ${req.body.email}` : ""}. В production подключается email-провайдер.`
   });
+});
+
+apiRouter.get("/hr/dashboard", adminAuth, async (_req, res, next) => {
+  try {
+    const rows = await dbAll(
+      `SELECT ur.id, ur.created_at, e.name AS enterprise_name, ur.global_profile_json, ur.enterprise_result_json
+       FROM user_results ur
+       LEFT JOIN enterprises e ON e.id = ur.enterprise_id
+       ORDER BY ur.id DESC
+       LIMIT 50`
+    );
+    res.json({
+      items: rows.map((row) => {
+        const profile = parseJson(row.global_profile_json, {});
+        const result = parseJson(row.enterprise_result_json, {});
+        return {
+          id: row.id,
+          createdAt: row.created_at,
+          enterprise: row.enterprise_name,
+          role: profile.primaryRole,
+          auxiliaryRoles: profile.auxiliaryRoles,
+          readinessScore: result.readinessScore,
+          readinessLevel: result.hrProfile?.readinessLevel,
+          badges: result.badges,
+          certificate: result.certificate
+        };
+      })
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 apiRouter.get("/admin/summary", adminAuth, async (_req, res, next) => {
@@ -232,7 +332,8 @@ apiRouter.get("/admin/summary", adminAuth, async (_req, res, next) => {
     res.json({
       globalTestQuestions: questions.count,
       enterprises: enterprises.count,
-      userResults: results.count
+      userResults: results.count,
+      logic: "24 visual questions, dynamic role mapping, portfolio, certificate, HR dashboard"
     });
   } catch (error) {
     next(error);
