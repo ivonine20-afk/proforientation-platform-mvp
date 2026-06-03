@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "init-db": "node src/db/init-db.js",
-    "seed": "node src/db/seed.js"
+    "seed": "node src/db/seed.js",
+    "test:admin": "node tests/admin-api.test.js"
   },
   "dependencies": {
     "archiver": "7.0.1",
