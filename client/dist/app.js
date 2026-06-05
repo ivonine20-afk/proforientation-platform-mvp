@@ -36,38 +36,6 @@ function $(selector) {
   return document.querySelector(selector);
 }
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#039;"
-  }[char]));
-}
-
-function aiPreviewBlock(ai) {
-  if (!ai?.enabled) return "";
-  return `
-    <div class="panel pad" style="margin-top:18px">
-      <div class="meta"><span>ИИ-интерпретация результата</span><span>${escapeHtml(ai.model || "OpenAI")}</span></div>
-      <p class="lead">${escapeHtml(ai.summary)}</p>
-      <div class="grid cols">
-        <div>
-          <h3>Сильные стороны</h3>
-          <div class="taglist">${(ai.strengths || []).map((item) => `<span class="tag teal">${escapeHtml(item)}</span>`).join("")}</div>
-        </div>
-        <div>
-          <h3>Рекомендованные направления</h3>
-          <div class="taglist">${(ai.recommendedDirections || []).map((item) => `<span class="tag">${escapeHtml(item)}</span>`).join("")}</div>
-        </div>
-      </div>
-      <p>${escapeHtml(ai.enterpriseMatchingComment)}</p>
-      <p><strong>Следующий шаг:</strong> ${escapeHtml(ai.nextStep)}</p>
-    </div>
-  `;
-}
-
 function shell(content) {
   $("#app").innerHTML = `
     <header class="top">
@@ -198,7 +166,6 @@ async function result() {
   state.preview = await api("/results/preview", { answerIds: state.answers.map((answer) => answer.id) }).catch(() => state.preview);
   const enterprises = state.preview?.enterprises || state.enterprises;
   const primary = state.preview?.primaryRole;
-  const ai = state.preview?.aiInterpretation;
   shell(`
     <main class="main">
       <section class="wrap grid route">
@@ -219,7 +186,6 @@ async function result() {
               </div>
             </div>
           </div>
-          ${aiPreviewBlock(ai)}
           <h2 style="margin-top:28px">Предприятия и симуляторы</h2>
           <div class="cards">
             ${enterprises.map((enterprise) => `

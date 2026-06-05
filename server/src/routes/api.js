@@ -1,12 +1,9 @@
 import crypto from "node:crypto";
 import express from "express";
-import OpenAI from "openai";
 import { dbAll, dbGet, dbRun } from "../db/db.js";
 import { adminAuth } from "../middleware/adminAuth.js";
 
 export const apiRouter = express.Router();
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-const openAiModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 const roleMeta = {
   production_engineer: {
@@ -40,124 +37,6 @@ function parseJson(value, fallback) {
     return value ? JSON.parse(value) : fallback;
   } catch {
     return fallback;
-  }
-}
-
-function clampString(value, maxLength = 1200) {
-  return typeof value === "string" ? value.slice(0, maxLength) : "";
-}
-
-function validateAiPreview(value, fallback) {
-  const source = value && typeof value === "object" ? value : {};
-  const roles = new Set(Object.keys(roleMeta));
-  const selectedPrimary = roles.has(source.primaryRoleCode) ? source.primaryRoleCode : fallback.primaryRole?.code;
-  const auxiliaryRoleCodes = Array.isArray(source.auxiliaryRoleCodes)
-    ? source.auxiliaryRoleCodes.filter((code) => roles.has(code) && code !== selectedPrimary).slice(0, 2)
-    : fallback.auxiliaryRoles.map((role) => role.code).slice(0, 2);
-
-  return {
-    enabled: true,
-    source: "openai",
-    model: clampString(source.model || openAiModel, 80),
-    confidence: Math.max(0, Math.min(100, Number(source.confidence || 0))),
-    primaryRoleCode: selectedPrimary,
-    auxiliaryRoleCodes,
-    summary: clampString(source.summary, 700),
-    strengths: Array.isArray(source.strengths) ? source.strengths.map((item) => clampString(item, 160)).filter(Boolean).slice(0, 5) : [],
-    recommendedDirections: Array.isArray(source.recommendedDirections) ? source.recommendedDirections.map((item) => clampString(item, 160)).filter(Boolean).slice(0, 5) : [],
-    enterpriseMatchingComment: clampString(source.enterpriseMatchingComment, 500),
-    nextStep: clampString(source.nextStep, 300)
-  };
-}
-
-function buildAiPrompt({ answers, roleMapping, enterprises }) {
-  return [
-    {
-      role: "system",
-      content: [
-        "Ты профориентационный аналитик платформы Промакадемия.",
-        "Нужно интерпретировать ответы школьника/студента и вернуть только валидный JSON.",
-        "Не придумывай роли вне списка. Не добавляй markdown. Не добавляй пояснения вне JSON.",
-        "Тон: понятный, поддерживающий, практичный, без медицинских или психологических диагнозов."
-      ].join(" ")
-    },
-    {
-      role: "user",
-      content: JSON.stringify({
-        task: "Сформируй интерпретацию результата входного профориентационного теста.",
-        outputSchema: {
-          model: "string",
-          confidence: "number 0..100",
-          primaryRoleCode: "one of allowedRoles.code",
-          auxiliaryRoleCodes: "array of up to 2 allowedRoles.code",
-          summary: "short student-facing result text",
-          strengths: "array of 3-5 strengths",
-          recommendedDirections: "array of 3-5 professional directions",
-          enterpriseMatchingComment: "why these enterprises should be shown",
-          nextStep: "what to do next on the platform"
-        },
-        allowedRoles: Object.entries(roleMeta).map(([code, meta]) => ({ code, title: meta.title, competencies: meta.competencies })),
-        deterministicMapping: {
-          primaryRole: roleMapping.primaryRole,
-          auxiliaryRoles: roleMapping.auxiliaryRoles,
-          roleScores: roleMapping.roleScores
-        },
-        selectedAnswers: answers,
-        availableEnterprises: enterprises.map((enterprise) => ({
-          code: enterprise.code,
-          name: enterprise.name,
-          sector: enterprise.sector,
-          match: enterprise.match,
-          tags: enterprise.tags
-        }))
-      })
-    }
-  ];
-}
-
-async function getSelectedAnswerContext(answerIds) {
-  if (!Array.isArray(answerIds) || answerIds.length === 0) return [];
-  const result = [];
-  for (const id of answerIds) {
-    const row = await dbGet(
-      `SELECT gq.position, gq.text AS question, gta.text AS answer, gta.points, gta.tags_json
-       FROM global_test_answers gta
-       JOIN global_test_questions gq ON gq.id = gta.question_id
-       WHERE gta.id = ?`,
-      [id]
-    );
-    if (row) {
-      result.push({
-        position: row.position,
-        question: row.question,
-        answer: row.answer,
-        points: row.points,
-        tags: parseJson(row.tags_json, {})
-      });
-    }
-  }
-  return result.sort((a, b) => a.position - b.position);
-}
-
-async function getAiPreviewInterpretation({ answerIds, roleMapping, enterprises }) {
-  if (!openai) return { enabled: false, source: "fallback", reason: "OPENAI_API_KEY is not configured" };
-  try {
-    const answers = await getSelectedAnswerContext(answerIds);
-    const response = await openai.chat.completions.create({
-      model: openAiModel,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: buildAiPrompt({ answers, roleMapping, enterprises })
-    });
-    const parsed = JSON.parse(response.choices?.[0]?.message?.content || "{}");
-    return validateAiPreview({ ...parsed, model: response.model || openAiModel }, roleMapping);
-  } catch (error) {
-    return {
-      enabled: false,
-      source: "fallback",
-      reason: "AI preview failed validation or request",
-      message: error?.message || "unknown error"
-    };
   }
 }
 
@@ -306,14 +185,12 @@ async function calculatePreview(answerIds) {
 
   const roleMapping = assignRoles(profile);
   const enterprises = rankEnterprises(profile, await getEnterprises());
-  const aiInterpretation = await getAiPreviewInterpretation({ answerIds, roleMapping, enterprises });
   return {
     profile,
     title: roleMapping.primaryRole?.title || "Профессия на заводе",
     primaryRole: roleMapping.primaryRole,
     auxiliaryRoles: roleMapping.auxiliaryRoles,
     roleScores: roleMapping.roleScores,
-    aiInterpretation,
     enterprises,
     portfolioSeed: {
       headline: roleMapping.primaryRole?.title,
