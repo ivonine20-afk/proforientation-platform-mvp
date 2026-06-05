@@ -4,7 +4,7 @@ services:
     ports:
       - "${APP_PORT:-3000}:3000"
     env_file:
-      - ./server/.env
+      - ./server/.env.example
     environment:
       PORT: 3000
       DATABASE_PATH: /app/data/base.db

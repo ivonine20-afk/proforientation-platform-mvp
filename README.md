@@ -186,10 +186,10 @@ React/Vite/Tailwind-исходники оставлены в `client/src` как
 ## Быстрый запуск
 
 ```bash
-cp server/.env.example server/.env
-docker compose build
-docker compose up -d
+docker compose up --build -d
 ```
+
+`docker-compose.yml` использует `server/.env.example`, поэтому свежий клон запускается без ручного создания `.env`. LLM-токен можно добавить после запуска во вкладке `LLM`.
 
 Сайт:
 
