@@ -8,6 +8,7 @@ const state = {
   enterprise: null,
   step: 0,
   scenarioAnswers: [],
+  questState: {},
   feedback: "",
   finalResult: null
 };
@@ -253,6 +254,7 @@ async function result() {
       state.enterprise = enterprises.find((enterprise) => enterprise.id == button.dataset.enterprise);
       state.step = 0;
       state.scenarioAnswers = [];
+      state.questState = {};
       state.feedback = "";
       state.finalResult = null;
       go("enterprise");
@@ -300,6 +302,22 @@ function detectGameType(task) {
   if (title.includes("100") || title.includes("влож")) return "budget";
   if (title.includes("смен") || title.includes("контроль") || title.includes("сбой")) return "factory";
   return task.gameType || "factory";
+}
+
+function questKey(task) {
+  return `task_${task.id}`;
+}
+
+function getQuestState(task) {
+  const key = questKey(task);
+  if (!state.questState[key]) state.questState[key] = {};
+  return state.questState[key];
+}
+
+function completeQuest(task, answerIndex, feedback) {
+  const answer = task.answers[Math.min(answerIndex, task.answers.length - 1)] || task.answers[0];
+  state.scenarioAnswers[state.step] = answer;
+  state.feedback = feedback || task.feedback;
 }
 
 function gameActionButtons(task) {
@@ -426,11 +444,257 @@ function renderFactoryGame(task) {
 
 function renderGame(task) {
   const type = detectGameType(task);
-  if (type === "priority") return renderPriorityGame(task);
-  if (type === "heatmap") return renderHeatmapGame(task);
-  if (type === "technology") return renderTechnologyGame(task);
-  if (type === "budget") return renderBudgetGame(task);
+  if (type === "priority") return renderPriorityQuest(task);
+  if (type === "heatmap") return renderHeatmapQuest(task);
+  if (type === "technology") return renderTechnologyQuest(task);
+  if (type === "budget") return renderBudgetQuest(task);
   return renderFactoryGame(task);
+}
+
+function renderPriorityQuest(task) {
+  const qs = getQuestState(task);
+  const objects = ["Больница", "Жилой квартал Северный", "Школа", "Промзона Альфа", "Водозаборная станция"];
+  const order = qs.order || [];
+  const remaining = objects.map((label, index) => ({ label, index })).filter((item) => !order.includes(item.index));
+  return `
+    <div class="game-board priority-board" data-game="priority">
+      <div class="dispatch-panel">
+        <div class="dispatch-head"><strong>Диспетчерский пульт</strong><span>Мощность доступна: 65%</span></div>
+        <div class="quest-layout">
+          <div>
+            <h3>Список объектов</h3>
+            <div class="object-pool">
+              ${remaining.map((item) => `<button class="quest-chip" data-priority-object="${item.index}">${item.label}</button>`).join("") || `<span class="quest-muted">Все объекты расставлены</span>`}
+            </div>
+          </div>
+          <div>
+            <h3>Приоритет подключения 1→5</h3>
+            <div class="priority-lanes">
+              ${order.map((itemIndex, index) => `
+                <div class="priority-item">
+                  <span class="rank">${index + 1}</span>
+                  <span>${objects[itemIndex]}</span>
+                  <small>${itemIndex === 0 || itemIndex === 2 || itemIndex === 4 ? "соцсфера / жизнеобеспечение" : itemIndex === 1 ? "жилой контур" : "промышленная нагрузка"}</small>
+                </div>
+              `).join("")}
+              ${Array.from({ length: 5 - order.length }).map((_, index) => `<div class="priority-empty">${order.length + index + 1}. Перетащите или кликните объект</div>`).join("")}
+            </div>
+          </div>
+        </div>
+        <div class="quest-actions">
+          <button class="btn secondary" data-priority-reset ${order.length ? "" : "disabled"}>Сбросить порядок</button>
+          <button class="btn" data-priority-confirm ${order.length === 5 && !qs.confirmed ? "" : "disabled"}>Подтвердить график подключения</button>
+        </div>
+      </div>
+      ${qs.confirmed ? `
+        <div class="quest-case">
+          <strong>Мини-кейс</strong>
+          <p>Промзона требует 30% мощности, но без воды остановится насосная. Что делать?</p>
+          <div class="quest-choice-grid">
+            ${["Отложить промзону", "Временно снизить давление в жилом секторе", "Запустить резервную подкачку"].map((label, index) => `<button class="quest-choice ${qs.caseChoice === index ? "selected" : ""}" data-priority-case="${index}">${label}</button>`).join("")}
+          </div>
+          ${qs.caseChoice !== undefined ? `<div class="system-reaction">Согласно регламентам, первыми подключаются объекты жизнеобеспечения и соцсферы. Система показывает последствия выбора: давление стабильно, жалобы жителей не растут, производство получает отложенный график.</div>` : ""}
+        </div>
+      ` : `<p class="game-hint">Кликайте объекты в нужном порядке. Эталон: соцобъекты и критическая инфраструктура → жилье → промышленность.</p>`}
+    </div>
+  `;
+}
+
+function renderHeatmapQuest(task) {
+  const qs = getQuestState(task);
+  const found = qs.found || [];
+  const thermal = Boolean(qs.thermal);
+  const zones = [
+    ["Старый стык 1987", true, "Участок №1. Год укладки: 1987. Изоляция: износ 78%. Температура стенки: 42°C."],
+    ["Новая труба", false, "Температура в норме. Ищите места коррозии, отсутствия изоляции или конденсата."],
+    ["Камера 12", true, "Участок №2. Камера с перегревом. Здесь теряется до 12% энергии."],
+    ["Изоляция 78%", true, "Участок №3. Изоляция изношена, поверхность перегрета."],
+    ["Теплопункт", false, "Теплопункт работает штатно."],
+    ["Уклон трассы", false, "Уклон требует контроля, но это не зона текущей утечки."]
+  ];
+  return `
+    <div class="game-board" data-game="heatmap">
+      <div class="heatmap-toolbar">
+        <strong>Изометрическая схема тепловой сети</strong>
+        <span class="heat-scale">синий: норма → красный: перегрев/утечка</span>
+        <button class="btn secondary" data-thermal-toggle>${thermal ? "Тепловизор включен" : "Включить тепловизор"}</button>
+      </div>
+      <div class="heatmap">
+        ${zones.map((zone, index) => `
+          <button class="heat-node ${thermal && zone[1] ? "risk" : ""} ${found.includes(index) ? "found" : ""}" data-heat-zone="${index}">
+            <span>${zone[0]}</span>
+            <small>${found.includes(index) ? "зафиксировано" : thermal && zone[1] ? "? зона риска" : "нет данных"}</small>
+          </button>
+        `).join("")}
+      </div>
+      <div class="quest-panel">
+        <strong>Счетчик диагностики: ${found.length}/3</strong>
+        <p>${qs.lastCard || "Включите тепловизор, исследуйте карту и кликните 3 участка с аномальными потерями."}</p>
+      </div>
+      ${found.length >= 3 ? `<div class="system-reaction">Анимация ремонта: бригада меняет изоляцию и ставит датчики протечки.</div><button class="btn" data-heat-finish>Завершить диагностику</button>` : ""}
+    </div>
+  `;
+}
+
+function renderTechnologyQuest(task) {
+  const qs = getQuestState(task);
+  const selected = qs.tech;
+  const air = Number(qs.air ?? 45);
+  const reagent = Number(qs.reagent ?? 35);
+  const cards = [
+    ["scr", "Каталитический нейтрализатор", "-55%", "2 месяца / дорого", 55],
+    ["burn", "Ступенчатое горение", "-28%", "быстро / дешево", 28],
+    ["combo", "Комбо: горение + реагенты", "-41%", "оптимально", 41]
+  ];
+  const chosen = cards.find((card) => card[0] === selected);
+  const reduction = selected === "combo" ? Math.min(48, 34 + Math.round((air + reagent) / 14)) : chosen?.[4] || 0;
+  const currentNox = selected ? Math.round(180 * (1 - reduction / 100)) : 180;
+  return `
+    <div class="game-board" data-game="technology">
+      <div class="emission-dashboard"><strong>Текущие выбросы NOx: ${currentNox} мг/м3</strong><span>Цель: ≤108 мг/м3 (-40%)</span></div>
+      <div class="tech-cards">
+        ${cards.map((card) => `
+          <button class="tech-card ${selected === card[0] ? "best" : ""}" data-tech-card="${card[0]}">
+            <strong>${card[1]}</strong><span>${card[2]}</span><small>${card[3]}</small>
+          </button>
+        `).join("")}
+      </div>
+      ${selected ? `
+        <div class="simulator">
+          <strong>Симуляция горелки/фильтра</strong>
+          <div class="nox-meter"><span style="width:${Math.min(100, currentNox / 1.8)}%"></span></div>
+          <p>Баланс: экология vs бюджет vs время. ${currentNox <= 108 ? "Цель достигнута." : "Цель не достигнута, скорректируйте параметры."}</p>
+          <label>Доля вторичного воздуха: <strong>${air}%</strong><input data-tech-slider="air" type="range" min="20" max="70" value="${air}"></label>
+          <label>Дозировка реагентов: <strong>${reagent}%</strong><input data-tech-slider="reagent" type="range" min="10" max="70" value="${reagent}"></label>
+          <button class="btn" data-tech-apply ${currentNox <= 108 ? "" : "disabled"}>Применить технологию</button>
+        </div>
+      ` : `<p class="game-hint">Кликните технологию, раскройте параметры и добейтесь снижения NOx минимум на 40%.</p>`}
+    </div>
+  `;
+}
+
+function renderBudgetQuest(task) {
+  const qs = getQuestState(task);
+  const values = qs.budget || [25, 35, 25, 15];
+  const total = values.reduce((sum, value) => sum + Number(value), 0);
+  const left = 100 - total;
+  const reliability = Math.min(100, 45 + Math.round(values[0] * 0.35 + values[1] * 0.55 + values[3] * 0.15));
+  const risk = Math.max(5, 70 - Math.round(values[1] * 0.45 + values[2] * 0.5 + values[3] * 0.25));
+  const payback = Math.max(2, 9 - Math.round((values[0] + values[1]) / 25));
+  return `
+    <div class="game-board" data-game="budget">
+      <div class="budget-total"><strong>Осталось: ${left} млн ₽</strong><span>Сумма плана: ${total} / 100 млн ₽</span></div>
+      <div class="sliders">
+        ${["Автоматизация", "Замена труб", "Экология/Фильтры", "Обучение/Кадры"].map((item, index) => `
+          <label><span>${item}: <strong>${values[index]} млн ₽</strong></span><input data-budget-slider="${index}" type="range" min="0" max="70" value="${values[index]}" /></label>
+        `).join("")}
+      </div>
+      <div class="forecast">
+        <div><strong>${reliability}%</strong><span>Надежность сети</span></div>
+        <div><strong>${payback} лет</strong><span>Срок окупаемости</span></div>
+        <div><strong>${risk}%</strong><span>Остаточные риски</span></div>
+      </div>
+      <button class="btn" data-budget-submit ${total === 100 ? "" : "disabled"}>Сформировать инвестиционный план</button>
+      ${qs.submitted ? `<div class="system-reaction">AI-наставник: хороший план связывает найденные утечки, экологические требования и устойчивость команды. Бейдж: Инвест-план.</div>` : `<p class="game-hint">Двигайте ползунки. Кнопка активна только при точном равенстве 100 млн ₽.</p>`}
+    </div>
+  `;
+}
+
+function bindQuestGame(task) {
+  const type = detectGameType(task);
+  const qs = getQuestState(task);
+  document.querySelectorAll("[data-priority-object]").forEach((button) => {
+    button.onclick = () => {
+      qs.order = [...(qs.order || []), Number(button.dataset.priorityObject)];
+      scenario();
+    };
+  });
+  const priorityReset = document.querySelector("[data-priority-reset]");
+  if (priorityReset) priorityReset.onclick = () => {
+    qs.order = [];
+    qs.confirmed = false;
+    delete qs.caseChoice;
+    state.scenarioAnswers[state.step] = null;
+    state.feedback = "";
+    scenario();
+  };
+  const priorityConfirm = document.querySelector("[data-priority-confirm]");
+  if (priorityConfirm) priorityConfirm.onclick = () => {
+    qs.confirmed = true;
+    state.feedback = "Согласно регламентам, первоочередно подключаются объекты жизнеобеспечения и соцсферы.";
+    scenario();
+  };
+  document.querySelectorAll("[data-priority-case]").forEach((button) => {
+    button.onclick = () => {
+      qs.caseChoice = Number(button.dataset.priorityCase);
+      completeQuest(task, qs.caseChoice === 2 ? 0 : 1, task.feedback);
+      scenario();
+    };
+  });
+  const thermalToggle = document.querySelector("[data-thermal-toggle]");
+  if (thermalToggle) thermalToggle.onclick = () => {
+    qs.thermal = true;
+    scenario();
+  };
+  document.querySelectorAll("[data-heat-zone]").forEach((button) => {
+    button.onclick = () => {
+      const index = Number(button.dataset.heatZone);
+      const risk = [0, 2, 3].includes(index);
+      qs.found = qs.found || [];
+      if (risk && !qs.found.includes(index)) qs.found.push(index);
+      qs.lastCard = risk
+        ? `Участок №${index + 1}. Температура стенки выше нормы, зона фиксируется в диагностике.`
+        : "Температура в норме. Ищите места коррозии, отсутствия изоляции или конденсата.";
+      scenario();
+    };
+  });
+  const heatFinish = document.querySelector("[data-heat-finish]");
+  if (heatFinish) heatFinish.onclick = () => {
+    completeQuest(task, 0, task.feedback);
+    scenario();
+  };
+  document.querySelectorAll("[data-tech-card]").forEach((button) => {
+    button.onclick = () => {
+      qs.tech = button.dataset.techCard;
+      scenario();
+    };
+  });
+  document.querySelectorAll("[data-tech-slider]").forEach((input) => {
+    input.oninput = () => {
+      qs[input.dataset.techSlider] = Number(input.value);
+      scenario();
+    };
+  });
+  const techApply = document.querySelector("[data-tech-apply]");
+  if (techApply) techApply.onclick = () => {
+    completeQuest(task, qs.tech === "combo" ? 0 : 1, task.feedback);
+    scenario();
+  };
+  document.querySelectorAll("[data-budget-slider]").forEach((input) => {
+    input.oninput = () => {
+      const values = qs.budget || [25, 35, 25, 15];
+      values[Number(input.dataset.budgetSlider)] = Number(input.value);
+      qs.budget = values;
+      scenario();
+    };
+  });
+  const budgetSubmit = document.querySelector("[data-budget-submit]");
+  if (budgetSubmit) budgetSubmit.onclick = () => {
+    qs.submitted = true;
+    const values = qs.budget || [25, 35, 25, 15];
+    const goodPlan = values[1] >= 25 && values[2] >= 15 && values[3] >= 10;
+    completeQuest(task, goodPlan ? 0 : 2, task.feedback);
+    scenario();
+  };
+  if (type === "factory") {
+    document.querySelectorAll("[data-scenario-answer]").forEach((button) => {
+      button.onclick = () => {
+        state.scenarioAnswers[state.step] = task.answers.find((answer) => answer.id == button.dataset.scenarioAnswer);
+        state.feedback = task.feedback;
+        scenario();
+      };
+    });
+  }
 }
 
 function scenario() {
@@ -471,6 +735,7 @@ function scenario() {
       scenario();
     };
   });
+  bindQuestGame(task);
   $("#scenarioPrev").onclick = () => {
     state.step -= 1;
     state.feedback = "";
@@ -523,7 +788,7 @@ async function final() {
           <div class="actions">
             <button class="btn" id="mail">✉ Отправить портфолио на email</button>
             <button class="btn secondary" onclick="go('result')">⌖ Другие предприятия</button>
-            <button class="btn ghost" onclick="state.answers=[];state.enterprise=null;state.scenarioAnswers=[];state.preview=null;go('home')">↺ Пройти заново</button>
+            <button class="btn ghost" onclick="state.answers=[];state.enterprise=null;state.scenarioAnswers=[];state.questState={};state.preview=null;go('home')">↺ Пройти заново</button>
           </div>
           <p id="note"></p>
         </div>
