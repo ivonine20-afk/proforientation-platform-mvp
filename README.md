@@ -293,3 +293,30 @@ curl http://localhost:3000/api/bootstrap
 ```
 
 В ответе в `test.questions` должно быть 24 элемента. Если запускаете `client` отдельно через Vite, сначала запустите backend на порту `3000`, потому что Vite проксирует `/api` на `http://127.0.0.1:3000`.
+
+## LLM-оценка сценариев предприятий
+
+Финальный результат предприятия оценивается через OpenAI-compatible Chat Completions API. Backend отправляет в LLM общий профиль пользователя, предприятие, профессии, задания квеста, выбранные ответы и базовый скоринг. LLM должна вернуть валидный JSON с выводом для пользователя и HR.
+
+Переменные в `server/.env`:
+
+```env
+AI_API_URL=https://api.openai.com/v1/chat/completions
+AI_API_KEY=
+AI_API_MODEL=gpt-3.5-turbo
+AI_SYSTEM_PROMPT=
+```
+
+Если `AI_API_KEY` не задан или LLM недоступна, backend не ломает сценарий и использует локальную fallback-оценку по правилам. В ответе `/api/results/final` есть поля `enterpriseResult.aiEvaluation`, `enterpriseResult.aiDiagnostic` и `enterpriseResult.evaluationMode`.
+
+## Защита от старой локальной БД
+
+В БД есть таблица `seed_metadata` с текущей версией seed-данных. При каждом старте сервер:
+
+- применяет актуальную схему;
+- проверяет версию seed и контрольные счетчики;
+- автоматически пересоздает demo-данные, если локальная БД устарела или неполная.
+
+Текущая версия seed: `2026-06-05-llm-enterprise-evaluation-v1`.
+
+Это убирает ситуацию, когда один человек видит актуальный сайт, а другой после клона или старого Docker volume видит старые вопросы/предприятия/сценарии.

@@ -94,6 +94,7 @@ try {
   assert.equal(summary.response.status, 200);
   assert.equal(summary.body.globalTestQuestions, 24);
   assert.equal(summary.body.enterprises, 2);
+  assert.equal(summary.body.seedVersion, "2026-06-05-llm-enterprise-evaluation-v1");
 
   const answerIds = bootstrap.body.test.questions.map((question) => question.answers[0].id);
   const preview = await request("/api/results/preview", {
@@ -120,6 +121,9 @@ try {
   assert.ok(finalResult.body.enterpriseResult.certificate.id.startsWith("PA-"));
   assert.equal(finalResult.body.enterpriseResult.hrProfile.practiceReadiness, 100);
   assert.ok(finalResult.body.enterpriseResult.badges.length > 0);
+  assert.equal(finalResult.body.enterpriseResult.evaluationMode, "fallback");
+  assert.ok(finalResult.body.enterpriseResult.aiEvaluation.summary);
+  assert.ok(finalResult.body.enterpriseResult.aiEvaluation.hrComment);
 
   const dashboard = await request("/api/hr/dashboard", {
     headers: { Authorization: authHeader }

@@ -454,6 +454,8 @@ function Final({ enterprise, answers, preview, scenarioAnswers, questions, setSc
 
   const total = scenarioAnswers.reduce((sum, answer) => sum + Number(answer?.points || 0), 0);
   const recommendation = serverResult?.enterpriseResult?.recommendation || enterprise.professions[0];
+  const aiEvaluation = serverResult?.enterpriseResult?.aiEvaluation;
+  const evaluationMode = serverResult?.enterpriseResult?.evaluationMode === "llm" ? "LLM" : "fallback";
 
   async function sendEmail() {
     const response = await api("/email-results", {
@@ -489,6 +491,17 @@ function Final({ enterprise, answers, preview, scenarioAnswers, questions, setSc
               <p className="mt-2 leading-7 text-slate-700">{enterprise.reason}</p>
             </div>
           </div>
+          {aiEvaluation && (
+            <div className="mt-5 rounded-panel bg-soft p-5">
+              <div className="mb-2 flex justify-between gap-3 text-sm font-extrabold text-muted">
+                <span>ИИ-оценка сценария предприятия</span>
+                <span>{evaluationMode}</span>
+              </div>
+              <h3 className="font-black">{aiEvaluation.readinessLevel}</h3>
+              <p className="mt-2 leading-7 text-slate-700">{aiEvaluation.summary}</p>
+              <p className="mt-2 leading-7"><strong>HR:</strong> {aiEvaluation.hrComment}</p>
+            </div>
+          )}
           <div className="mt-7 flex flex-wrap gap-3">
             <button className="btn btn-primary" onClick={sendEmail}>
               <Mail size={18} /> Отправить на email

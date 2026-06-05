@@ -767,6 +767,8 @@ async function final() {
   const portfolio = result?.portfolio || {};
   const certificate = result?.certificate || {};
   const hr = result?.hrProfile || {};
+  const ai = result?.aiEvaluation || {};
+  const aiMode = result?.evaluationMode === "llm" ? "LLM" : "fallback";
 
   shell(`
     <main class="main">
@@ -795,6 +797,23 @@ async function final() {
             <h3>${certificate.title || "Сертификат Промакадемии"}</h3>
             <p><strong>Номер:</strong> ${certificate.id || "PA-DEMO"}</p>
             <p><strong>Предприятие:</strong> ${portfolio.enterprise || enterprise.name}</p>
+          </div>
+          <div class="panel pad" style="margin-top:18px">
+            <div class="meta"><span>ИИ-оценка сценария предприятия</span><span>${aiMode}</span></div>
+            <h3>${ai.readinessLevel || "Профиль готовности"}</h3>
+            <p>${ai.summary || "Оценка сформирована после прохождения квеста предприятия."}</p>
+            <div class="grid cols">
+              <div>
+                <p><strong>Сильные стороны:</strong></p>
+                <ul>${(ai.strengths || []).map((item) => `<li>${item}</li>`).join("")}</ul>
+              </div>
+              <div>
+                <p><strong>Зоны роста:</strong></p>
+                <ul>${(ai.growthZones || []).map((item) => `<li>${item}</li>`).join("")}</ul>
+              </div>
+            </div>
+            <p><strong>Комментарий HR:</strong> ${ai.hrComment || ""}</p>
+            <p><strong>Следующий шаг:</strong> ${(ai.nextSteps || []).join(" ")}</p>
           </div>
           <div class="actions">
             <button class="btn" id="mail">✉ Отправить портфолио на email</button>

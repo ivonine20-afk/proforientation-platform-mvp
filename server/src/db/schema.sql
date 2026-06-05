@@ -105,3 +105,9 @@ CREATE TABLE IF NOT EXISTS user_results (
   FOREIGN KEY (session_id) REFERENCES user_sessions(id) ON DELETE CASCADE,
   FOREIGN KEY (enterprise_id) REFERENCES enterprises(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS seed_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

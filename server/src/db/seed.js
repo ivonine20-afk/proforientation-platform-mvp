@@ -1,4 +1,7 @@
-import { closeDb, dbRun } from "./db.js";
+import { pathToFileURL } from "node:url";
+import { closeDb, dbGet, dbRun } from "./db.js";
+
+export const SEED_VERSION = "2026-06-05-llm-enterprise-evaluation-v1";
 
 const roleTypes = [
   {
@@ -184,14 +187,15 @@ async function clearTables() {
     "global_result_profiles",
     "global_test_answers",
     "global_test_questions",
-    "global_orientation_tests"
+    "global_orientation_tests",
+    "seed_metadata"
   ];
   for (const table of tables) {
     await dbRun(`DELETE FROM ${table}`);
   }
 }
 
-async function seed() {
+export async function seed() {
   await clearTables();
 
   const test = await dbRun(
@@ -256,13 +260,62 @@ async function seed() {
     }
   }
 
-  console.log(`Seed completed: ${testQuestions.length} visual questions, ${roleTypes.length} role profiles, ${enterprises.length} enterprises`);
+  await dbRun(
+    "INSERT INTO seed_metadata (key, value) VALUES (?, ?)",
+    ["seed_version", SEED_VERSION]
+  );
+
+  console.log(`Seed completed: ${testQuestions.length} visual questions, ${roleTypes.length} role profiles, ${enterprises.length} enterprises, version ${SEED_VERSION}`);
 }
 
-seed()
-  .then(async () => closeDb())
-  .catch(async (error) => {
-    console.error(error);
-    await closeDb();
-    process.exit(1);
-  });
+export async function getSeedState() {
+  const [version, questions, enterprises, scenarios] = await Promise.all([
+    dbGet("SELECT value FROM seed_metadata WHERE key = ?", ["seed_version"]),
+    dbGet("SELECT COUNT(*) AS count FROM global_test_questions"),
+    dbGet("SELECT COUNT(*) AS count FROM enterprises"),
+    dbGet("SELECT COUNT(*) AS count FROM enterprise_game_scenarios")
+  ]);
+
+  return {
+    version: version?.value || null,
+    questions: Number(questions?.count || 0),
+    enterprises: Number(enterprises?.count || 0),
+    scenarios: Number(scenarios?.count || 0)
+  };
+}
+
+export async function ensureFreshSeed({ force = false } = {}) {
+  let state;
+  try {
+    state = await getSeedState();
+  } catch {
+    state = { version: null, questions: 0, enterprises: 0, scenarios: 0 };
+  }
+
+  const isFresh =
+    state.version === SEED_VERSION &&
+    state.questions === testQuestions.length &&
+    state.enterprises === enterprises.length &&
+    state.scenarios === enterprises.length;
+
+  if (!force && isFresh) {
+    console.log(`Seed is fresh: version ${SEED_VERSION}`);
+    return { refreshed: false, state };
+  }
+
+  console.log(
+    `Refreshing seed data: current=${JSON.stringify(state)}, expected=${SEED_VERSION}`
+  );
+  await seed();
+  return { refreshed: true, state: await getSeedState() };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seed()
+    .then(async () => closeDb())
+    .catch(async (error) => {
+      console.error(error);
+      await closeDb();
+      process.exit(1);
+    });
+}

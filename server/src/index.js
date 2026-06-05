@@ -4,6 +4,8 @@ import cors from "cors";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiRouter } from "./routes/api.js";
+import { initDb } from "./db/init-db.js";
+import { ensureFreshSeed } from "./db/seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -26,6 +28,16 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`Server started on port ${port}`);
+async function start() {
+  await initDb();
+  await ensureFreshSeed({ force: process.env.FORCE_RESEED_ON_START === "true" });
+
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`Server started on port ${port}`);
+  });
+}
+
+start().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

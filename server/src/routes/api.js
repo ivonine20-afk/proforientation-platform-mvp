@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { dbAll, dbGet, dbRun } from "../db/db.js";
 import { adminAuth } from "../middleware/adminAuth.js";
+import { evaluateEnterpriseResult } from "../services/llmEvaluation.js";
 
 export const apiRouter = express.Router();
 
@@ -278,6 +279,15 @@ apiRouter.post("/results/final", async (req, res, next) => {
     }
 
     const enterpriseResult = makeFinalResult(preview, enterprise, scenarioAnswers);
+    const aiResult = await evaluateEnterpriseResult({
+      preview,
+      enterprise,
+      scenarioAnswers,
+      baseResult: enterpriseResult
+    });
+    enterpriseResult.aiEvaluation = aiResult.evaluation;
+    enterpriseResult.aiDiagnostic = aiResult.diagnostic;
+    enterpriseResult.evaluationMode = aiResult.diagnostic.mode;
 
     await dbRun(
       "INSERT INTO user_results (session_id, enterprise_id, global_profile_json, enterprise_result_json) VALUES (?, ?, ?, ?)",
@@ -318,6 +328,8 @@ apiRouter.get("/hr/dashboard", adminAuth, async (_req, res, next) => {
           auxiliaryRoles: profile.auxiliaryRoles,
           readinessScore: result.readinessScore,
           readinessLevel: result.hrProfile?.readinessLevel,
+          aiEvaluation: result.aiEvaluation,
+          evaluationMode: result.evaluationMode,
           badges: result.badges,
           certificate: result.certificate
         };
@@ -339,7 +351,8 @@ apiRouter.get("/admin/summary", adminAuth, async (_req, res, next) => {
       globalTestQuestions: questions.count,
       enterprises: enterprises.count,
       userResults: results.count,
-      logic: "24 visual questions, dynamic role mapping, portfolio, certificate, HR dashboard"
+      seedVersion: (await dbGet("SELECT value FROM seed_metadata WHERE key = ?", ["seed_version"]))?.value || null,
+      logic: "24 visual questions, dynamic role mapping, LLM/fallback enterprise evaluation, portfolio, certificate, HR dashboard"
     });
   } catch (error) {
     next(error);
