@@ -164,6 +164,13 @@ const enterprises = [
   }
 ];
 
+function getEnterpriseGameType(enterpriseCode, taskIndex) {
+  if (enterpriseCode === "tplus") {
+    return ["priority", "heatmap", "technology", "budget"][taskIndex] || "factory";
+  }
+  return "factory";
+}
+
 async function clearTables() {
   const tables = [
     "user_results",
@@ -238,7 +245,7 @@ async function seed() {
       );
       await dbRun(
         "INSERT INTO enterprise_game_tasks (question_id, task_type, payload_json) VALUES (?, ?, ?)",
-        [question.id, "visual_choice", JSON.stringify({ visual, progressTrack: "practice_readiness" })]
+        [question.id, getEnterpriseGameType(enterprise.code, index), JSON.stringify({ visual, progressTrack: "practice_readiness" })]
       );
       for (const [text, points, isPreferred] of answers) {
         await dbRun(

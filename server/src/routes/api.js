@@ -123,11 +123,17 @@ async function getEnterprises() {
       : [];
 
     for (const task of tasks) {
+      const gameTask = await dbGet(
+        "SELECT task_type, payload_json FROM enterprise_game_tasks WHERE question_id = ? ORDER BY id LIMIT 1",
+        [task.id]
+      );
       const answers = await dbAll(
         "SELECT id, text, points, is_preferred FROM enterprise_game_answers WHERE question_id = ? ORDER BY id",
         [task.id]
       );
       task.visual = parseJson(task.visual_json, []);
+      task.gameType = gameTask?.task_type || "visual_choice";
+      task.gamePayload = parseJson(gameTask?.payload_json, {});
       task.answers = answers.map((answer) => ({
         id: answer.id,
         text: answer.text,

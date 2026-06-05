@@ -258,6 +258,147 @@ function enterprise() {
   $("#startScenario").onclick = () => go("scenario");
 }
 
+function detectGameType(task) {
+  const title = task.title.toLowerCase();
+  if (title.includes("подключ") || title.includes("приоритет")) return "priority";
+  if (title.includes("найди") || title.includes("потер")) return "heatmap";
+  if (title.includes("nox") || title.includes("технолог")) return "technology";
+  if (title.includes("100") || title.includes("влож")) return "budget";
+  if (title.includes("смен") || title.includes("контроль") || title.includes("сбой")) return "factory";
+  return task.gameType || "factory";
+}
+
+function gameActionButtons(task) {
+  return `
+    <div class="game-actions">
+      ${task.answers.map((answer, index) => `
+        <button class="game-action ${answer.isPreferred ? "preferred" : ""}" data-scenario-answer="${answer.id}">
+          <span>${index + 1}</span>
+          <strong>${answer.isPreferred ? "Оптимальное действие" : "Альтернативный ход"}</strong>
+          <small>${answer.text}</small>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderPriorityGame(task) {
+  const objects = task.visual.slice(0, 5);
+  return `
+    <div class="game-board priority-board">
+      <div class="dispatch-panel">
+        <div class="dispatch-head">
+          <strong>Диспетчерский пульт</strong>
+          <span>Мощность доступна: 65%</span>
+        </div>
+        <div class="priority-lanes">
+          ${objects.map((item, index) => `
+            <div class="priority-item">
+              <span class="rank">${index + 1}</span>
+              <span>${item}</span>
+              <small>${index < 2 ? "соцобъект / жизнеобеспечение" : index < 4 ? "жилой контур" : "промышленная нагрузка"}</small>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <p class="game-hint">Игровая механика: расставить объекты по приоритету подключения и подтвердить график.</p>
+      ${gameActionButtons(task)}
+    </div>
+  `;
+}
+
+function renderHeatmapGame(task) {
+  return `
+    <div class="game-board">
+      <div class="heatmap-toolbar">
+        <strong>Тепловизор включен</strong>
+        <span class="heat-scale">норма → перегрев</span>
+      </div>
+      <div class="heatmap">
+        ${task.visual.map((item, index) => `
+          <button class="heat-node ${index === 0 || index === 2 || index === 3 ? "risk" : ""}">
+            <span>${item}</span>
+            <small>${index === 0 || index === 2 || index === 3 ? "аномалия ?" : "норма"}</small>
+          </button>
+        `).join("")}
+      </div>
+      <p class="game-hint">Игровая механика: найти 3 зоны аномальных потерь на схеме сети.</p>
+      ${gameActionButtons(task)}
+    </div>
+  `;
+}
+
+function renderTechnologyGame(task) {
+  const cards = [
+    ["SCR-катализатор", "-55%", "дорого / 2 месяца"],
+    ["Ступенчатое горение", "-28%", "быстро / дешево"],
+    ["Комбо + реагенты", "-41%", "оптимально"]
+  ];
+  return `
+    <div class="game-board">
+      <div class="emission-dashboard">
+        <strong>NOx: 180 мг/м³</strong>
+        <span>Цель: ≤108 мг/м³ (-40%)</span>
+      </div>
+      <div class="tech-cards">
+        ${cards.map((card, index) => `
+          <div class="tech-card ${index === 2 ? "best" : ""}">
+            <strong>${card[0]}</strong>
+            <span>${card[1]}</span>
+            <small>${card[2]}</small>
+          </div>
+        `).join("")}
+      </div>
+      <p class="game-hint">Игровая механика: сравнить технологии, увидеть trade-off «экология / бюджет / срок» и применить решение.</p>
+      ${gameActionButtons(task)}
+    </div>
+  `;
+}
+
+function renderBudgetGame(task) {
+  return `
+    <div class="game-board">
+      <div class="budget-total"><strong>Инвестплан: 100 млн ₽</strong><span>распределите направления</span></div>
+      <div class="sliders">
+        ${["Автоматизация", "Замена труб", "Экология/фильтры", "Обучение/кадры"].map((item, index) => `
+          <label>
+            <span>${item}</span>
+            <input type="range" min="0" max="60" value="${[25, 35, 25, 15][index]}" disabled />
+          </label>
+        `).join("")}
+      </div>
+      <p class="game-hint">Игровая механика: слайдерами собрать инвестиционный план ровно на 100 млн ₽ и получить фидбек наставника.</p>
+      ${gameActionButtons(task)}
+    </div>
+  `;
+}
+
+function renderFactoryGame(task) {
+  return `
+    <div class="game-board">
+      <div class="factory-map">
+        ${task.visual.map((item, index) => `
+          <div class="factory-zone ${index % 2 === 0 ? "active" : ""}">
+            <strong>${item}</strong>
+            <small>${["зона действия", "контроль", "ресурс", "риск"][index % 4]}</small>
+          </div>
+        `).join("")}
+      </div>
+      <p class="game-hint">Игровая механика: выполнить производственное действие на карте участка, а не ответить на тестовый вопрос.</p>
+      ${gameActionButtons(task)}
+    </div>
+  `;
+}
+
+function renderGame(task) {
+  const type = detectGameType(task);
+  if (type === "priority") return renderPriorityGame(task);
+  if (type === "heatmap") return renderHeatmapGame(task);
+  if (type === "technology") return renderTechnologyGame(task);
+  if (type === "budget") return renderBudgetGame(task);
+  return renderFactoryGame(task);
+}
+
 function scenario() {
   const enterprise = state.enterprise;
   const tasks = enterprise.scenario.tasks;
@@ -274,10 +415,7 @@ function scenario() {
             <div class="qhead"><span>${enterprise.name}: этап ${state.step + 1} из ${tasks.length}</span><span>${selected ? `+${selected.points} баллов` : "ожидает решения"}</span></div>
             <h2>${task.title}</h2>
             <p class="lead">${task.prompt}</p>
-            <div class="visual"><div class="nodes">${task.visual.map((item, index) => `<div class="node ${index % 3 === 0 ? "hot" : ""}">${item}</div>`).join("")}</div></div>
-            <div class="options">
-              ${task.answers.map((answer) => `<button class="option ${selected?.id === answer.id ? "selected" : ""}" data-scenario-answer="${answer.id}"><span class="radio"></span><span>${answer.text}</span></button>`).join("")}
-            </div>
+            ${renderGame(task)}
             <div class="actions">
               <button class="btn ghost" id="scenarioPrev" ${state.step === 0 ? "disabled" : ""}>← Назад</button>
               <button class="btn" id="scenarioNext" ${!selected ? "disabled" : ""}>${state.step === tasks.length - 1 ? "Сформировать портфолио" : "Следующий этап →"}</button>
