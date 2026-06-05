@@ -553,8 +553,8 @@ function renderTechnologyQuest(task) {
           <strong>Симуляция горелки/фильтра</strong>
           <div class="nox-meter"><span style="width:${Math.min(100, currentNox / 1.8)}%"></span></div>
           <p>Баланс: экология vs бюджет vs время. ${currentNox <= 108 ? "Цель достигнута." : "Цель не достигнута, скорректируйте параметры."}</p>
-          <label>Доля вторичного воздуха: <strong>${air}%</strong><input data-tech-slider="air" type="range" min="20" max="70" value="${air}"></label>
-          <label>Дозировка реагентов: <strong>${reagent}%</strong><input data-tech-slider="reagent" type="range" min="10" max="70" value="${reagent}"></label>
+          <label>Доля вторичного воздуха: <strong data-tech-value="air">${air}%</strong><input data-tech-slider="air" type="range" min="20" max="70" value="${air}"></label>
+          <label>Дозировка реагентов: <strong data-tech-value="reagent">${reagent}%</strong><input data-tech-slider="reagent" type="range" min="10" max="70" value="${reagent}"></label>
           <button class="btn" data-tech-apply ${currentNox <= 108 ? "" : "disabled"}>Применить технологию</button>
         </div>
       ` : `<p class="game-hint">Кликните технологию, раскройте параметры и добейтесь снижения NOx минимум на 40%.</p>`}
@@ -564,7 +564,7 @@ function renderTechnologyQuest(task) {
 
 function renderBudgetQuest(task) {
   const qs = getQuestState(task);
-  const values = qs.budget || [25, 35, 25, 15];
+  const values = qs.budget || [0, 0, 0, 0];
   const total = values.reduce((sum, value) => sum + Number(value), 0);
   const left = 100 - total;
   const reliability = Math.min(100, 45 + Math.round(values[0] * 0.35 + values[1] * 0.55 + values[3] * 0.15));
@@ -572,21 +572,63 @@ function renderBudgetQuest(task) {
   const payback = Math.max(2, 9 - Math.round((values[0] + values[1]) / 25));
   return `
     <div class="game-board" data-game="budget">
-      <div class="budget-total"><strong>Осталось: ${left} млн ₽</strong><span>Сумма плана: ${total} / 100 млн ₽</span></div>
+      <div class="budget-total"><strong data-budget-left>Осталось: ${left} млн ₽</strong><span data-budget-total>Сумма плана: ${total} / 100 млн ₽</span></div>
       <div class="sliders">
         ${["Автоматизация", "Замена труб", "Экология/Фильтры", "Обучение/Кадры"].map((item, index) => `
-          <label><span>${item}: <strong>${values[index]} млн ₽</strong></span><input data-budget-slider="${index}" type="range" min="0" max="70" value="${values[index]}" /></label>
+          <label><span>${item}: <strong data-budget-value="${index}">${values[index]} млн ₽</strong></span><input data-budget-slider="${index}" type="range" min="0" max="70" value="${values[index]}" /></label>
         `).join("")}
       </div>
       <div class="forecast">
-        <div><strong>${reliability}%</strong><span>Надежность сети</span></div>
-        <div><strong>${payback} лет</strong><span>Срок окупаемости</span></div>
-        <div><strong>${risk}%</strong><span>Остаточные риски</span></div>
+        <div><strong data-forecast="reliability">${reliability}%</strong><span>Надежность сети</span></div>
+        <div><strong data-forecast="payback">${payback} лет</strong><span>Срок окупаемости</span></div>
+        <div><strong data-forecast="risk">${risk}%</strong><span>Остаточные риски</span></div>
       </div>
       <button class="btn" data-budget-submit ${total === 100 ? "" : "disabled"}>Сформировать инвестиционный план</button>
       ${qs.submitted ? `<div class="system-reaction">AI-наставник: хороший план связывает найденные утечки, экологические требования и устойчивость команды. Бейдж: Инвест-план.</div>` : `<p class="game-hint">Двигайте ползунки. Кнопка активна только при точном равенстве 100 млн ₽.</p>`}
     </div>
   `;
+}
+
+function updateTechSimulator(qs) {
+  const air = Number(qs.air ?? 45);
+  const reagent = Number(qs.reagent ?? 35);
+  const reduction = qs.tech === "combo" ? Math.min(48, 34 + Math.round((air + reagent) / 14)) : qs.tech === "scr" ? 55 : qs.tech === "burn" ? 28 : 0;
+  const currentNox = qs.tech ? Math.round(180 * (1 - reduction / 100)) : 180;
+  const airValue = document.querySelector('[data-tech-value="air"]');
+  const reagentValue = document.querySelector('[data-tech-value="reagent"]');
+  const title = document.querySelector(".emission-dashboard strong");
+  const meter = document.querySelector(".nox-meter span");
+  const apply = document.querySelector("[data-tech-apply]");
+  if (airValue) airValue.textContent = `${air}%`;
+  if (reagentValue) reagentValue.textContent = `${reagent}%`;
+  if (title) title.textContent = `Текущие выбросы NOx: ${currentNox} мг/м3`;
+  if (meter) meter.style.width = `${Math.min(100, currentNox / 1.8)}%`;
+  if (apply) apply.disabled = currentNox > 108;
+}
+
+function updateBudgetSimulator(qs) {
+  const values = qs.budget || [0, 0, 0, 0];
+  const total = values.reduce((sum, value) => sum + Number(value), 0);
+  const left = 100 - total;
+  const reliability = Math.min(100, 45 + Math.round(values[0] * 0.35 + values[1] * 0.55 + values[3] * 0.15));
+  const risk = Math.max(5, 70 - Math.round(values[1] * 0.45 + values[2] * 0.5 + values[3] * 0.25));
+  const payback = Math.max(2, 9 - Math.round((values[0] + values[1]) / 25));
+  values.forEach((value, index) => {
+    const label = document.querySelector(`[data-budget-value="${index}"]`);
+    if (label) label.textContent = `${value} млн ₽`;
+  });
+  const leftNode = document.querySelector("[data-budget-left]");
+  const totalNode = document.querySelector("[data-budget-total]");
+  const submit = document.querySelector("[data-budget-submit]");
+  const reliabilityNode = document.querySelector('[data-forecast="reliability"]');
+  const paybackNode = document.querySelector('[data-forecast="payback"]');
+  const riskNode = document.querySelector('[data-forecast="risk"]');
+  if (leftNode) leftNode.textContent = `Осталось: ${left} млн ₽`;
+  if (totalNode) totalNode.textContent = `Сумма плана: ${total} / 100 млн ₽`;
+  if (submit) submit.disabled = total !== 100;
+  if (reliabilityNode) reliabilityNode.textContent = `${reliability}%`;
+  if (paybackNode) paybackNode.textContent = `${payback} лет`;
+  if (riskNode) riskNode.textContent = `${risk}%`;
 }
 
 function bindQuestGame(task) {
@@ -627,6 +669,11 @@ function bindQuestGame(task) {
   };
   document.querySelectorAll("[data-heat-zone]").forEach((button) => {
     button.onclick = () => {
+      if (!qs.thermal) {
+        qs.lastCard = "Сначала включите тепловизор: без цветовой шкалы нельзя подтвердить аномальные потери.";
+        scenario();
+        return;
+      }
       const index = Number(button.dataset.heatZone);
       const risk = [0, 2, 3].includes(index);
       qs.found = qs.found || [];
@@ -651,7 +698,11 @@ function bindQuestGame(task) {
   document.querySelectorAll("[data-tech-slider]").forEach((input) => {
     input.oninput = () => {
       qs[input.dataset.techSlider] = Number(input.value);
-      scenario();
+      state.scenarioAnswers[state.step] = null;
+      state.feedback = "";
+      const next = document.querySelector("#scenarioNext");
+      if (next) next.disabled = true;
+      updateTechSimulator(qs);
     };
   });
   const techApply = document.querySelector("[data-tech-apply]");
@@ -661,16 +712,21 @@ function bindQuestGame(task) {
   };
   document.querySelectorAll("[data-budget-slider]").forEach((input) => {
     input.oninput = () => {
-      const values = qs.budget || [25, 35, 25, 15];
+      const values = qs.budget || [0, 0, 0, 0];
       values[Number(input.dataset.budgetSlider)] = Number(input.value);
       qs.budget = values;
-      scenario();
+      qs.submitted = false;
+      state.scenarioAnswers[state.step] = null;
+      state.feedback = "";
+      const next = document.querySelector("#scenarioNext");
+      if (next) next.disabled = true;
+      updateBudgetSimulator(qs);
     };
   });
   const budgetSubmit = document.querySelector("[data-budget-submit]");
   if (budgetSubmit) budgetSubmit.onclick = () => {
     qs.submitted = true;
-    const values = qs.budget || [25, 35, 25, 15];
+    const values = qs.budget || [0, 0, 0, 0];
     const goodPlan = values[1] >= 25 && values[2] >= 15 && values[3] >= 10;
     completeQuest(task, goodPlan ? 0 : 2, task.feedback);
     scenario();
