@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { dbAll, dbGet, dbRun } from "../db/db.js";
 import { adminAuth } from "../middleware/adminAuth.js";
-import { evaluateEnterpriseResult } from "../services/llmEvaluation.js";
+import { evaluateEnterpriseResult, getPublicLlmSettings, updateLlmSettings } from "../services/llmEvaluation.js";
 
 export const apiRouter = express.Router();
 
@@ -354,6 +354,22 @@ apiRouter.get("/admin/summary", adminAuth, async (_req, res, next) => {
       seedVersion: (await dbGet("SELECT value FROM seed_metadata WHERE key = ?", ["seed_version"]))?.value || null,
       logic: "24 visual questions, dynamic role mapping, LLM/fallback enterprise evaluation, portfolio, certificate, HR dashboard"
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+apiRouter.get("/admin/llm-settings", adminAuth, async (_req, res, next) => {
+  try {
+    res.json(await getPublicLlmSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
+apiRouter.post("/admin/llm-settings", adminAuth, async (req, res, next) => {
+  try {
+    res.json(await updateLlmSettings(req.body || {}));
   } catch (error) {
     next(error);
   }

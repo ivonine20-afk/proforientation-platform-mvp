@@ -41,7 +41,7 @@ function shell(content) {
     <header class="top">
       <div class="brand"><span class="mark">П</span><span>Промакадемия</span></div>
       <nav class="nav">
-        ${[["home", "Старт"], ["test", "Тест"], ["result", "Профессии"], ["admin", "HR"]].map(([id, title]) => `
+        ${[["home", "Старт"], ["test", "Тест"], ["result", "Профессии"], ["admin", "HR"], ["llm", "LLM"]].map(([id, title]) => `
           <button class="${state.screen === id ? "active" : ""}" data-nav="${id}">${title}</button>
         `).join("")}
       </nav>
@@ -846,6 +846,79 @@ function admin() {
   `);
 }
 
+async function llmSettings() {
+  shell(`
+    <main class="main">
+      <section class="wrap">
+        <h2>Настройка LLM</h2>
+        <p class="lead">Здесь задается OpenAI-compatible endpoint для оценки результатов квестов предприятий. Токен хранится на backend и не показывается на странице полностью.</p>
+        <form class="panel pad llm-form" id="llmForm">
+          <label>
+            <span>LLM URL</span>
+            <input id="llmUrl" name="llm_url" placeholder="https://api.deepseek.com" autocomplete="off">
+          </label>
+          <label>
+            <span>Модель</span>
+            <input id="llmModel" name="llm_model" placeholder="deepseek-v4-flash" autocomplete="off">
+          </label>
+          <label>
+            <span>Токен</span>
+            <input id="llmToken" name="llm_token" type="password" placeholder="Оставьте пустым, чтобы не менять текущий токен" autocomplete="new-password">
+          </label>
+          <label>
+            <span>Системный prompt</span>
+            <textarea id="llmPrompt" name="llm_system_prompt" rows="5" placeholder="Необязательно: переопределяет стандартный prompt оценки"></textarea>
+          </label>
+          <div class="actions">
+            <button class="btn" type="submit">Сохранить настройки</button>
+            <button class="btn ghost" type="button" id="llmReload">Обновить</button>
+          </div>
+          <p id="llmStatus" class="lead"></p>
+        </form>
+      </section>
+    </main>
+  `);
+
+  async function loadSettings() {
+    const status = $("#llmStatus");
+    status.textContent = "Загрузка настроек...";
+    try {
+      const settings = await api("/admin/llm-settings");
+      $("#llmUrl").value = settings.llm_url || "";
+      $("#llmModel").value = settings.llm_model || "";
+      $("#llmPrompt").value = settings.llm_system_prompt || "";
+      $("#llmToken").value = "";
+      status.textContent = settings.has_token
+        ? `Токен подключен: ${settings.token_masked}. Источник: ${settings.source?.token || "unknown"}.`
+        : "Токен не задан. LLM будет работать в fallback-режиме.";
+    } catch (error) {
+      status.textContent = "Не удалось загрузить настройки. Проверьте admin login/password.";
+    }
+  }
+
+  $("#llmReload").onclick = loadSettings;
+  $("#llmForm").onsubmit = async (event) => {
+    event.preventDefault();
+    const payload = {
+      llm_url: $("#llmUrl").value.trim(),
+      llm_model: $("#llmModel").value.trim(),
+      llm_token: $("#llmToken").value.trim(),
+      llm_system_prompt: $("#llmPrompt").value.trim()
+    };
+    if (!payload.llm_token) delete payload.llm_token;
+    const status = $("#llmStatus");
+    status.textContent = "Сохраняю настройки...";
+    try {
+      const settings = await api("/admin/llm-settings", payload);
+      $("#llmToken").value = "";
+      status.textContent = `Сохранено. Токен: ${settings.has_token ? settings.token_masked : "не задан"}. Модель: ${settings.llm_model}.`;
+    } catch (error) {
+      status.textContent = "Не удалось сохранить настройки. Проверьте admin login/password.";
+    }
+  };
+  await loadSettings();
+}
+
 function render() {
   if (state.screen === "home") home();
   if (state.screen === "test") test();
@@ -854,6 +927,7 @@ function render() {
   if (state.screen === "scenario") scenario();
   if (state.screen === "final") final();
   if (state.screen === "admin") admin();
+  if (state.screen === "llm") llmSettings();
 }
 
 async function init() {

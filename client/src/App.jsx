@@ -24,7 +24,8 @@ const screens = {
   ENTERPRISE: "enterprise",
   SCENARIO: "scenario",
   FINAL: "final",
-  ADMIN: "admin"
+  ADMIN: "admin",
+  LLM: "llm"
 };
 
 async function api(path, options) {
@@ -45,7 +46,8 @@ function Shell({ screen, setScreen, children }) {
     [screens.HOME, "Старт"],
     [screens.TEST, "Тест"],
     [screens.RESULT, "Результат"],
-    [screens.ADMIN, "Админка"]
+    [screens.ADMIN, "Админка"],
+    [screens.LLM, "LLM"]
   ];
 
   return (
@@ -520,6 +522,95 @@ function Final({ enterprise, answers, preview, scenarioAnswers, questions, setSc
   );
 }
 
+function LlmSettings() {
+  const [settings, setSettings] = useState(null);
+  const [form, setForm] = useState({ llm_url: "", llm_model: "", llm_token: "", llm_system_prompt: "" });
+  const [message, setMessage] = useState("");
+
+  async function loadSettings() {
+    setMessage("Загрузка настроек...");
+    try {
+      const data = await api("/admin/llm-settings");
+      setSettings(data);
+      setForm({
+        llm_url: data.llm_url || "",
+        llm_model: data.llm_model || "",
+        llm_token: "",
+        llm_system_prompt: data.llm_system_prompt || ""
+      });
+      setMessage(data.has_token ? `Токен подключен: ${data.token_masked}` : "Токен не задан.");
+    } catch {
+      setMessage("Не удалось загрузить настройки. Проверьте admin login/password.");
+    }
+  }
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  async function saveSettings(event) {
+    event.preventDefault();
+    const payload = { ...form };
+    if (!payload.llm_token) delete payload.llm_token;
+    setMessage("Сохраняю настройки...");
+    try {
+      const data = await api("/admin/llm-settings", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setSettings(data);
+      setForm((current) => ({ ...current, llm_token: "" }));
+      setMessage(`Сохранено. Токен: ${data.has_token ? data.token_masked : "не задан"}.`);
+    } catch {
+      setMessage("Не удалось сохранить настройки. Проверьте admin login/password.");
+    }
+  }
+
+  return (
+    <main className="px-5 py-10 lg:px-12">
+      <section className="mx-auto max-w-4xl">
+        <h2 className="text-3xl font-black md:text-4xl">Настройка LLM</h2>
+        <p className="mt-2 max-w-3xl leading-7 text-muted">
+          OpenAI-compatible endpoint для оценки результатов квестов предприятий. Токен хранится на backend и не показывается полностью.
+        </p>
+        <form className="panel mt-5 grid gap-4 p-5 md:p-8" onSubmit={saveSettings}>
+          {[
+            ["llm_url", "LLM URL", "https://api.deepseek.com", "text"],
+            ["llm_model", "Модель", "deepseek-v4-flash", "text"],
+            ["llm_token", "Токен", "Оставьте пустым, чтобы не менять текущий токен", "password"]
+          ].map(([name, label, placeholder, type]) => (
+            <label key={name} className="grid gap-2 font-extrabold">
+              <span className="text-sm uppercase text-muted">{label}</span>
+              <input
+                className="rounded-panel border border-line px-3 py-3"
+                type={type}
+                value={form[name]}
+                placeholder={placeholder}
+                onChange={(event) => setForm((current) => ({ ...current, [name]: event.target.value }))}
+              />
+            </label>
+          ))}
+          <label className="grid gap-2 font-extrabold">
+            <span className="text-sm uppercase text-muted">Системный prompt</span>
+            <textarea
+              className="min-h-28 rounded-panel border border-line px-3 py-3"
+              value={form.llm_system_prompt}
+              placeholder="Необязательно: переопределяет стандартный prompt оценки"
+              onChange={(event) => setForm((current) => ({ ...current, llm_system_prompt: event.target.value }))}
+            />
+          </label>
+          <div className="flex flex-wrap gap-3">
+            <button className="btn btn-primary" type="submit">Сохранить настройки</button>
+            <button className="btn btn-secondary" type="button" onClick={loadSettings}>Обновить</button>
+          </div>
+          <p className="font-extrabold text-slate-700">{message}</p>
+          {settings?.source && <p className="text-sm text-muted">Источник токена: {settings.source.token}</p>}
+        </form>
+      </section>
+    </main>
+  );
+}
+
 function Admin() {
   return (
     <main className="px-5 py-10 lg:px-12">
@@ -587,6 +678,7 @@ export default function App() {
     if (screen === screens.SCENARIO && selectedEnterprise) return <Scenario enterprise={selectedEnterprise} answers={answers} questions={questions} scenarioAnswers={scenarioAnswers} setScenarioAnswers={setScenarioAnswers} setScreen={setScreen} />;
     if (screen === screens.FINAL && selectedEnterprise) return <Final enterprise={selectedEnterprise} answers={answers} preview={preview} scenarioAnswers={scenarioAnswers} questions={questions} setScreen={setScreen} reset={reset} />;
     if (screen === screens.ADMIN) return <Admin />;
+    if (screen === screens.LLM) return <LlmSettings />;
     return <Home setScreen={setScreen} />;
   }, [answers, bootstrap, preview, questions, scenarioAnswers, screen, selectedEnterprise]);
 

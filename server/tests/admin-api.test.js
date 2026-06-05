@@ -18,6 +18,8 @@ function runNode(args, extraEnv = {}) {
       env: {
         ...process.env,
         DATABASE_PATH: dbPath,
+        AI_API_KEY: "",
+        OPENAI_API_KEY: "",
         ...extraEnv
       },
       stdio: "pipe"
@@ -71,6 +73,8 @@ const server = spawn(process.execPath, ["src/index.js"], {
     ...process.env,
     PORT: String(port),
     DATABASE_PATH: dbPath,
+    AI_API_KEY: "",
+    OPENAI_API_KEY: "",
     CLIENT_DIST: path.resolve(rootDir, "../client/dist")
   },
   stdio: "pipe"
@@ -95,6 +99,22 @@ try {
   assert.equal(summary.body.globalTestQuestions, 24);
   assert.equal(summary.body.enterprises, 2);
   assert.equal(summary.body.seedVersion, "2026-06-05-llm-enterprise-evaluation-v1");
+
+  const deniedLlmSettings = await request("/api/admin/llm-settings");
+  assert.equal(deniedLlmSettings.response.status, 401);
+
+  const savedLlmSettings = await request("/api/admin/llm-settings", {
+    method: "POST",
+    headers: { Authorization: authHeader, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      llm_url: "https://api.deepseek.com",
+      llm_model: "deepseek-v4-flash"
+    })
+  });
+  assert.equal(savedLlmSettings.response.status, 200);
+  assert.equal(savedLlmSettings.body.llm_url, "https://api.deepseek.com");
+  assert.equal(savedLlmSettings.body.llm_model, "deepseek-v4-flash");
+  assert.ok(!JSON.stringify(savedLlmSettings.body).includes("sk-"));
 
   const answerIds = bootstrap.body.test.questions.map((question) => question.answers[0].id);
   const preview = await request("/api/results/preview", {

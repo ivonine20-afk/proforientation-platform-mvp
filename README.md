@@ -301,13 +301,20 @@ curl http://localhost:3000/api/bootstrap
 Переменные в `server/.env`:
 
 ```env
-AI_API_URL=https://api.openai.com/v1/chat/completions
+AI_API_URL=https://api.deepseek.com
 AI_API_KEY=
-AI_API_MODEL=gpt-3.5-turbo
+AI_API_MODEL=deepseek-v4-flash
 AI_SYSTEM_PROMPT=
 ```
 
 Если `AI_API_KEY` не задан или LLM недоступна, backend не ломает сценарий и использует локальную fallback-оценку по правилам. В ответе `/api/results/final` есть поля `enterpriseResult.aiEvaluation`, `enterpriseResult.aiDiagnostic` и `enterpriseResult.evaluationMode`.
+
+Настройки можно менять без пересборки через отдельную вкладку `LLM` в интерфейсе. Вкладка использует защищенные admin routes:
+
+- `GET /api/admin/llm-settings`;
+- `POST /api/admin/llm-settings`.
+
+Токен хранится на backend, в интерфейс возвращается только маска токена.
 
 ## Защита от старой локальной БД
 

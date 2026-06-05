@@ -1,3 +1,5 @@
+import { dbAll, dbRun } from "../db/db.js";
+
 const defaultAiConfig = {
   url: "https://api.openai.com/v1/chat/completions",
   model: "gpt-3.5-turbo",
@@ -20,17 +22,74 @@ function normalizeStringArray(value, fallback, maxItems = 4) {
 function resolveChatCompletionsUrl(apiUrl) {
   const value = String(apiUrl || defaultAiConfig.url).trim().replace(/\/+$/, "");
   if (/\/chat\/completions$/i.test(value)) return value;
-  if (/\/v1$/i.test(value)) return `${value}/chat/completions`;
-  return `${value}/v1/chat/completions`;
+  return `${value}/chat/completions`;
 }
 
-function getAiConfig() {
+function maskToken(token) {
+  if (!token) return "";
+  if (token.length <= 10) return `${token.slice(0, 2)}***`;
+  return `${token.slice(0, 6)}***${token.slice(-4)}`;
+}
+
+async function readStoredLlmSettings() {
+  try {
+    const rows = await dbAll("SELECT key, value FROM llm_settings");
+    return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  } catch {
+    return {};
+  }
+}
+
+async function getAiConfig() {
+  const stored = await readStoredLlmSettings();
   return {
-    url: process.env.AI_API_URL || process.env.OPENAI_BASE_URL || defaultAiConfig.url,
-    key: process.env.AI_API_KEY || process.env.OPENAI_API_KEY || "",
-    model: process.env.AI_API_MODEL || process.env.OPENAI_MODEL || defaultAiConfig.model,
-    systemPrompt: process.env.AI_SYSTEM_PROMPT || defaultAiConfig.systemPrompt
+    url: stored.llm_url || process.env.AI_API_URL || process.env.OPENAI_BASE_URL || defaultAiConfig.url,
+    key: stored.llm_token || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || "",
+    model: stored.llm_model || process.env.AI_API_MODEL || process.env.OPENAI_MODEL || defaultAiConfig.model,
+    systemPrompt: stored.llm_system_prompt || process.env.AI_SYSTEM_PROMPT || defaultAiConfig.systemPrompt,
+    source: {
+      url: stored.llm_url ? "database" : "env/default",
+      token: stored.llm_token ? "database" : (process.env.AI_API_KEY || process.env.OPENAI_API_KEY ? "env" : "empty"),
+      model: stored.llm_model ? "database" : "env/default"
+    }
   };
+}
+
+export async function getPublicLlmSettings() {
+  const config = await getAiConfig();
+  return {
+    llm_url: config.url,
+    llm_model: config.model,
+    llm_system_prompt: config.systemPrompt === defaultAiConfig.systemPrompt ? "" : config.systemPrompt,
+    has_token: Boolean(config.key),
+    token_masked: maskToken(config.key),
+    source: config.source
+  };
+}
+
+export async function updateLlmSettings(settings) {
+  const updates = {
+    llm_url: clampString(settings.llm_url || settings.AI_API_URL, "", 500),
+    llm_model: clampString(settings.llm_model || settings.AI_API_MODEL, "", 120),
+    llm_system_prompt: clampString(settings.llm_system_prompt || settings.AI_SYSTEM_PROMPT, "", 2000)
+  };
+
+  if (Object.prototype.hasOwnProperty.call(settings, "llm_token") || Object.prototype.hasOwnProperty.call(settings, "AI_API_KEY")) {
+    updates.llm_token = clampString(settings.llm_token || settings.AI_API_KEY, "", 1000);
+  }
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (key !== "llm_token" && !value) continue;
+    if (key === "llm_token" && !value) continue;
+    await dbRun(
+      `INSERT INTO llm_settings (key, value, updated_at)
+       VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+      [key, value]
+    );
+  }
+
+  return getPublicLlmSettings();
 }
 
 function getAiResponseContent(data) {
@@ -164,7 +223,7 @@ function buildUserPrompt({ preview, enterprise, scenarioAnswers, baseResult }) {
 
 export async function evaluateEnterpriseResult(input) {
   const fallback = fallbackEvaluation(input);
-  const config = getAiConfig();
+  const config = await getAiConfig();
 
   if (!config.key) {
     return {
