@@ -71,7 +71,8 @@ const server = spawn(process.execPath, ["src/index.js"], {
     ...process.env,
     PORT: String(port),
     DATABASE_PATH: dbPath,
-    CLIENT_DIST: path.resolve(rootDir, "../client/dist")
+    CLIENT_DIST: path.resolve(rootDir, "../client/dist"),
+    OPENAI_API_KEY: ""
   },
   stdio: "pipe"
 });
@@ -104,6 +105,7 @@ try {
   assert.equal(preview.response.status, 200);
   assert.equal(preview.body.primaryRole.title, "Инженер-производственник");
   assert.ok(preview.body.auxiliaryRoles.length <= 2);
+  assert.equal(preview.body.aiInterpretation.source, "fallback");
 
   const enterprise = preview.body.enterprises[0];
   const scenarioAnswers = enterprise.scenario.tasks.map((task) => task.answers[0]);
